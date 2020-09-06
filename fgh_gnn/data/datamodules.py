@@ -3,7 +3,7 @@ import pathlib
 import pytorch_lightning as pl
 from ogb.graphproppred import GraphPropPredDataset
 
-from fgh_gnn.utils import analyze_func_groups
+from fgh_gnn.utils import analyze_fgroups_and_rings
 from fgh_gnn.utils import ogb_graph_to_mol
 
 
@@ -30,7 +30,7 @@ class OGBDataModule(pl.LightningDataModule):
         train_graphs = [self.dataset[i][0] for i in self.split_idx["train"]]
         train_mols = map(ogb_graph_to_mol, train_graphs)
 
-        fg_stats = analyze_func_groups(train_mols)
+        fg_stats = analyze_fgroups_and_rings(train_mols)
 
         # save analysis and vocab to csv file
         dataset_dir = pathlib.Path(self.dataset.root)

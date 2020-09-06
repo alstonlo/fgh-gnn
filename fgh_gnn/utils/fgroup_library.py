@@ -9,9 +9,11 @@ Reference:
 import pandas as pd
 from rdkit import Chem
 
+from .chem_utils import get_ring_fragments
+
 # C-containing groups
 ALLENIC = "allenic"
-VINYLIC = "vinylic"
+VINYL = "vinyl"
 ACETYLENIC = "acetylenic"
 
 # O-containing groups
@@ -59,9 +61,9 @@ SULFOXIDE = "sulfoxide"  # low specificity
 SULFATE = "sulfate"  # sulfuric acid monoester
 SULFENIC = "sulfenic"  # hits acid and conjugate base
 
-FG_SMARTS = {
+FGROUP_SMARTS = {
     ALLENIC: "[$([CX2](=C)=C)]",
-    VINYLIC: "[$([CX3]=[CX3])]",
+    VINYL: "[$([CX3H]=[CX1])]",
     ACETYLENIC: "[$([CX2]#C)]",
     ACYL_HALIDE: "[CX3](=[OX1])[F,Cl,Br,I]",
     ALDEHYDE: "[CX3H1](=O)[#6]",
@@ -109,28 +111,53 @@ FG_SMARTS = {
     SULFENIC: "[#16X2][OX2H,OX1H0-]"
 }
 
-FG_MOLS = {name: Chem.MolFromSmarts(s) for name, s in FG_SMARTS.items()}
+FGROUP_MOLS = {name: Chem.MolFromSmarts(s)
+               for name, s in FGROUP_SMARTS.items()}
 
 
 def has_func_groups(mol):
-    return {name: mol.HasSubstructMatch(fg_query)
-            for name, fg_query in FG_MOLS.items()}
+    return {name: mol.HasSubstructMatch(fgroup_query)
+            for name, fgroup_query in FGROUP_MOLS.items()}
 
 
-def analyze_func_groups(mol_batch):
+def analyze_fgroups_and_rings(mol_batch):
     batch_len = 0
-    data = {name: {'count': 0} for name, _ in FG_MOLS.items()}
+    fgroup_count = {name: 0 for name, _ in FGROUP_MOLS.items()}
+    ring_count = {}
 
     for mol in mol_batch:
+
+        # functional groups
         for name, is_member in has_func_groups(mol).items():
-            data[name]['count'] += int(is_member)
+            fgroup_count[name] += int(is_member)
+
+        # rings
+        for ring_smiles in get_ring_fragments(mol):
+            ring_count[ring_smiles] = ring_count.get(ring_smiles, 0) + 1
+
         batch_len += 1
 
-    for name, stats_dict in data.items():
-        stats_dict['smarts'] = FG_SMARTS[name]
-        stats_dict['freq'] = stats_dict['count'] / batch_len
+    data = []
+    for fgroup_name in sorted(fgroup_count.keys()):
+        row = {
+            'name': fgroup_name,
+            'smarts': FGROUP_SMARTS[fgroup_name],
+            'count': fgroup_count[fgroup_name],
+            'type': 'fgroup'
+        }
+        data.append(row)
+    for ring_smiles in sorted(ring_count.keys()):
+        ring = Chem.MolFromSmiles(ring_smiles)
+        row = {
+            'name': ring_smiles,
+            'smarts': Chem.MolToSmarts(ring, isomericSmiles=False),
+            'count': ring_count[ring_smiles],
+            'type': 'ring'
+        }
+        data.append(row)
 
-    columns = ('smarts', 'count', 'freq')
-    df = pd.DataFrame(data=data, index=columns).T
+    df = pd.DataFrame(data=data)
+    df['freq'] = df.apply(lambda r: (r['count'] / batch_len), axis=1)
+    print(df)
 
     return df
