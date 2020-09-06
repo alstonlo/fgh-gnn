@@ -8,6 +8,7 @@ Reference:
 
 import pandas as pd
 from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
 
 from .chem_utils import get_ring_fragments
 
@@ -15,6 +16,9 @@ from .chem_utils import get_ring_fragments
 ALLENIC = "allenic"
 VINYL = "vinyl"
 ACETYLENIC = "acetylenic"
+
+# F,Cl,Br,I-containing groups
+HALOALKANE = "[#6][F,Cl,Br,I]"
 
 # O-containing groups
 ETHER = "ether"
@@ -108,7 +112,8 @@ FGROUP_SMARTS = {
     SULFONE: "[$([#16X4](=[OX1])=[OX1]),$([#16X4+2]([OX1-])[OX1-])]",
     SULFOXIDE: "[$([#16X3]=[OX1]),$([#16X3+][OX1-])]",
     SULFATE: "[$([SX4](=O)(=O)(O)O),$([SX4+2]([O-])([O-])(O)O)]",
-    SULFENIC: "[#16X2][OX2H,OX1H0-]"
+    SULFENIC: "[#16X2][OX2H,OX1H0-]",
+    HALOALKANE: "[#6][F,Cl,Br,I]"
 }
 
 FGROUP_MOLS = {name: Chem.MolFromSmarts(s)
@@ -138,26 +143,29 @@ def analyze_fgroups_and_rings(mol_batch):
         batch_len += 1
 
     data = []
+
     for fgroup_name in sorted(fgroup_count.keys()):
         row = {
             'name': fgroup_name,
             'smarts': FGROUP_SMARTS[fgroup_name],
-            'count': fgroup_count[fgroup_name],
-            'type': 'fgroup'
+            'type': 'fgroup',
+            'aromatic': False,
+            'count': fgroup_count[fgroup_name]
         }
         data.append(row)
+
     for ring_smiles in sorted(ring_count.keys()):
         ring = Chem.MolFromSmiles(ring_smiles)
+        is_aromatic = (rdMolDescriptors.CalcNumAromaticRings(ring) > 0)
         row = {
             'name': ring_smiles,
             'smarts': Chem.MolToSmarts(ring, isomericSmiles=False),
-            'count': ring_count[ring_smiles],
-            'type': 'ring'
+            'type': 'ring',
+            'aromatic': is_aromatic,
+            'count': ring_count[ring_smiles]
         }
         data.append(row)
 
     df = pd.DataFrame(data=data)
     df['freq'] = df.apply(lambda r: (r['count'] / batch_len), axis=1)
-    print(df)
-
     return df
