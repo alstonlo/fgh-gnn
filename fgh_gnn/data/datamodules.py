@@ -1,3 +1,5 @@
+import pathlib
+
 import pytorch_lightning as pl
 from ogb.graphproppred import GraphPropPredDataset
 
@@ -28,10 +30,11 @@ class OGBDataModule(pl.LightningDataModule):
         train_graphs = [self.dataset[i][0] for i in self.split_idx["train"]]
         train_mols = map(ogb_graph_to_mol, train_graphs)
 
-        count, freq = analyze_func_groups(train_mols)
-        import pprint
-        pprint.pprint(count)
-        pprint.pprint(freq)
+        fg_stats = analyze_func_groups(train_mols)
+
+        # save analysis and vocab to csv file
+        dataset_dir = pathlib.Path(self.dataset.root)
+        fg_stats.to_csv(dataset_dir / "functional_groups.csv")
 
     def setup(self, stage=None):
 

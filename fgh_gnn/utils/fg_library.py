@@ -6,6 +6,7 @@ Reference:
         smarts_examples.html
 """
 
+import pandas as pd
 from rdkit import Chem
 
 # C-containing groups
@@ -118,13 +119,18 @@ def has_func_groups(mol):
 
 def analyze_func_groups(mol_batch):
     batch_len = 0
-    fg_count = {name: 0 for name, _ in FG_MOLS.items()}
+    data = {name: {'count': 0} for name, _ in FG_MOLS.items()}
 
     for mol in mol_batch:
         for name, is_member in has_func_groups(mol).items():
-            fg_count[name] += int(is_member)
+            data[name]['count'] += int(is_member)
         batch_len += 1
 
-    fg_freq = {name: (count / batch_len) for name, count in fg_count.items()}
+    for name, stats_dict in data.items():
+        stats_dict['smarts'] = FG_SMARTS[name]
+        stats_dict['freq'] = stats_dict['count'] / batch_len
 
-    return fg_count, fg_freq
+    columns = ('smarts', 'count', 'freq')
+    df = pd.DataFrame(data=data, index=columns).T
+
+    return df
