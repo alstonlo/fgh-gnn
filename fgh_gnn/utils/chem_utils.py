@@ -10,11 +10,11 @@ ogb_bond_list = (BondType.SINGLE,
                  BondType.AROMATIC)
 
 
-def ogb_graph_to_mol(graph):
+def ogb_graph_to_mol(raw_graph):
     mol = Chem.RWMol()
 
     # make atoms
-    for atom_feat in graph["node_feat"]:
+    for atom_feat in raw_graph["node_feat"]:
 
         feat_dict = atom_feature_vector_to_dict(atom_feat)
 
@@ -26,9 +26,9 @@ def ogb_graph_to_mol(graph):
         mol.AddAtom(atom)
 
     # make bonds
-    src, dst = graph["edge_index"]
+    src, dst = raw_graph["edge_index"]
 
-    for i, j, bond_feat in zip(src, dst, graph["edge_feat"]):
+    for i, j, bond_feat in zip(src, dst, raw_graph["edge_feat"]):
 
         i, j = i.item(), j.item()
         type_idx = bond_feat[0].item()
@@ -39,6 +39,7 @@ def ogb_graph_to_mol(graph):
 
     mol = mol.GetMol()
     Chem.SanitizeMol(mol)
+    Chem.Kekulize(mol)
     return mol
 
 
