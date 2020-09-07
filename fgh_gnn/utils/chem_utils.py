@@ -42,7 +42,7 @@ def ogb_graph_to_mol(raw_graph):
     return mol
 
 
-def get_ring_fragments(mol):
+def get_ring_fragments(mol, rtype):
     ssr = [set(x) for x in Chem.GetSymmSSSR(mol)]
 
     # account for fused compounds
@@ -52,9 +52,10 @@ def get_ring_fragments(mol):
             ring_b.clear()
     ssr = [r for r in ssr if r]  # clear all empty sets
 
-    # extract fragments
-    rings = set(Chem.MolFragmentToSmiles(mol, list(r),
-                                         isomericSmiles=False,
-                                         kekuleSmiles=True)
-                for r in ssr)
-    return rings
+    if rtype == 'smiles':
+        return set(Chem.MolFragmentToSmiles(mol, list(r),
+                                            isomericSmiles=False,
+                                            kekuleSmiles=True)
+                   for r in ssr)
+    elif rtype == 'idx':
+        return ssr

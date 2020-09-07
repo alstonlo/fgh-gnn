@@ -140,7 +140,7 @@ def analyze_fgroups_and_rings(smiles_batch):
             fgroup_count[name] += int(is_member)
 
         # rings
-        for ring_smiles in get_ring_fragments(mol):
+        for ring_smiles in get_ring_fragments(mol, rtype='smiles'):
             ring_count[ring_smiles] = ring_count.get(ring_smiles, 0) + 1
 
         batch_len += 1
