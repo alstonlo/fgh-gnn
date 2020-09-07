@@ -125,13 +125,14 @@ def has_func_groups(mol):
             for name, fgroup_query in FGROUP_MOLS.items()}
 
 
-def analyze_fgroups_and_rings(mol_batch):
+def analyze_fgroups_and_rings(smiles_batch):
     batch_len = 0
     fgroup_count = {name: 0 for name, _ in FGROUP_MOLS.items()}
     ring_count = {}
 
-    for mol in mol_batch:
+    for smiles in smiles_batch:
 
+        mol = Chem.MolFromSmiles(smiles, sanitize=True)
         Chem.Kekulize(mol)
 
         # functional groups
