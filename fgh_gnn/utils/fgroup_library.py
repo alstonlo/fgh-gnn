@@ -132,6 +132,7 @@ def analyze_fgroups_and_rings(mol_batch):
 
     for mol in mol_batch:
 
+        Chem.Kekulize(mol)
 
         # functional groups
         for name, is_member in has_func_groups(mol).items():

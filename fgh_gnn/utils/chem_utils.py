@@ -3,7 +3,6 @@ import itertools
 from ogb.utils.features import atom_feature_vector_to_dict
 from rdkit import Chem
 from rdkit.Chem.rdchem import BondType
-import copy
 
 ogb_bond_list = (BondType.SINGLE,
                  BondType.DOUBLE,
@@ -44,10 +43,6 @@ def ogb_graph_to_mol(graph):
 
 
 def get_ring_fragments(mol):
-
-    mol = copy.deepcopy(mol)
-    Chem.Kekulize(mol)
-
     ssr = [set(x) for x in Chem.GetSymmSSSR(mol)]
 
     # account for fused compounds
