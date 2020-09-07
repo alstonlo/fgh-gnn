@@ -120,8 +120,8 @@ FGROUP_MOLS = {name: Chem.MolFromSmarts(s)
                for name, s in FGROUP_SMARTS.items()}
 
 
-def has_func_groups(mol):
-    return {name: mol.HasSubstructMatch(fgroup_query)
+def count_func_groups(mol):
+    return {name: len(mol.GetSubstructMatches(fgroup_query))
             for name, fgroup_query in FGROUP_MOLS.items()}
 
 
@@ -136,11 +136,14 @@ def analyze_fgroups_and_rings(smiles_batch):
         Chem.Kekulize(mol)
 
         # functional groups
-        for name, is_member in has_func_groups(mol).items():
-            fgroup_count[name] += int(is_member)
+        for name, count in count_func_groups(mol).items():
+            fgroup_count[name] += count
 
         # rings
-        for ring_smiles in get_ring_fragments(mol, rtype='smiles'):
+        for ring_idxs in get_ring_fragments(mol):
+            ring_smiles = Chem.MolFragmentToSmiles(mol, list(ring_idxs),
+                                                   isomericSmiles=False,
+                                                   kekuleSmiles=True)
             ring_count[ring_smiles] = ring_count.get(ring_smiles, 0) + 1
 
         batch_len += 1
