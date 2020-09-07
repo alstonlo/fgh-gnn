@@ -18,7 +18,7 @@ VINYL = "vinyl"
 ACETYLENIC = "acetylenic"
 
 # F,Cl,Br,I-containing groups
-HALOALKANE = "[#6][F,Cl,Br,I]"
+HALOALKANE = "haloalkane"
 
 # O-containing groups
 ETHER = "ether"
@@ -131,6 +131,7 @@ def analyze_fgroups_and_rings(mol_batch):
     ring_count = {}
 
     for mol in mol_batch:
+
 
         # functional groups
         for name, is_member in has_func_groups(mol).items():
