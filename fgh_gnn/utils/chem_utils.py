@@ -37,7 +37,6 @@ def ogb_graph_to_mol(raw_graph):
             continue
         mol.AddBond(i, j, ogb_bond_list[type_idx])
 
-    mol = mol.GetMol()
     Chem.SanitizeMol(mol)
     Chem.Kekulize(mol)
     return mol
