@@ -185,8 +185,8 @@ class Cluster:
 
 def to_bidirectional(X):
     X_T = X.t()
-    sum = X + X_T
+    sym_sum = X + X_T
     X_min = torch.min(X, X_T)
 
     # noinspection PyTypeChecker
-    return torch.where(X_min > 0, X_min, sum)
+    return torch.where(X_min > 0, X_min, sym_sum)
