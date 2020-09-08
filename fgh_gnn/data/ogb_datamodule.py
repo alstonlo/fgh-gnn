@@ -1,18 +1,23 @@
+import dgl
 import pytorch_lightning as pl
+import torch
+from torch.utils.data import DataLoader
 
 from .ogb_dataset import OGBPropPredDataset
 
 
 class OGBDataModule(pl.LightningDataModule):
 
-    def __init__(self, name, data_dir, min_freq):
+    def __init__(self, name, data_dir, min_freq, batch_size, num_workers=0):
         super(OGBDataModule).__init__()
 
         self.name = name
         self.data_dir = data_dir
         self.min_freq = min_freq
+        self.batch_size = batch_size
+        self.num_workers = num_workers
 
-        # Attributes to be made
+        # Attributes to be assigned
         self.dataset = None
         self.split_idx = None
         self.train_set = None
@@ -20,21 +25,43 @@ class OGBDataModule(pl.LightningDataModule):
         self.test_set = None
 
     def prepare_data(self):
-        self.dataset = OGBPropPredDataset(self.name, self.data_dir)
+        self.dataset = OGBPropPredDataset(name=self.name,
+                                          root=self.data_dir,
+                                          min_freq=self.min_freq)
 
     def setup(self, stage=None):
 
         self.split_idx = self.dataset.get_idx_split()
 
-        test_idx = self.split_idx["test"]
-
         if (stage == 'fit') or (stage is None):
-
-            ogb_train_set = [self.dataset[i] for i in self.split_idx["train"]]
-            ogb_val_set = [self.dataset[i] for i in self.split_idx["valid"]]
-
-            self.train_set = ogb_train_set
-            self.val_set = ogb_val_set
+            self.train_set = self.dataset[self.split_idx['train']]
+            self.val_set = self.dataset[self.split_idx['valid']]
 
         if (stage == 'test') or (stage is None):
-            self.test_set = self.dataset[test_idx]
+            self.test_set = self.dataset[self.split_idx['test']]
+
+    def train_dataloader(self):
+        return DataLoader(self.train_set,
+                          batch_size=self.batch_size,
+                          shuffle=True,
+                          num_workers=self.num_workers,
+                          collate_fn=_collate_fn)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_set,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers,
+                          collate_fn=_collate_fn)
+
+    def test_dataloader(self):
+        return DataLoader(self.test_set,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers,
+                          collate_fn=_collate_fn)
+
+
+def _collate_fn(batch):
+    graphs, labels = batch
+    g = dgl.batch(graphs)
+    labels = torch.tensor(labels, dtype=torch.long)
+    return g, labels
