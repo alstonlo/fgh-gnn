@@ -155,19 +155,16 @@ def analyze_fgroups_and_rings(smiles_batch):
             'name': fgroup_name,
             'smarts': FGROUP_SMARTS[fgroup_name],
             'type': 'fgroup',
-            'aromatic': False,
             'count': fgroup_count[fgroup_name]
         }
         data.append(row)
 
     for ring_smiles in sorted(ring_count.keys()):
         ring = Chem.MolFromSmiles(ring_smiles)
-        is_aromatic = (rdMolDescriptors.CalcNumAromaticRings(ring) > 0)
         row = {
             'name': ring_smiles,
             'smarts': Chem.MolToSmarts(ring, isomericSmiles=False),
             'type': 'ring',
-            'aromatic': is_aromatic,
             'count': ring_count[ring_smiles]
         }
         data.append(row)
