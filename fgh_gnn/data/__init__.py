@@ -1,1 +1,1 @@
-from .datamodules import OGBDataModule
+from .ogb_datamodule import OGBDataModule

@@ -1,6 +1,6 @@
 import pytorch_lightning as pl
 
-from .datasets import OGBPropPredDataset
+from .ogb_dataset import OGBPropPredDataset
 
 
 class OGBDataModule(pl.LightningDataModule):
