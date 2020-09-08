@@ -52,7 +52,6 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
             url=self.meta_info[name]["url"],
             raw_dir=self.root,
             save_dir=self.root,
-            force_reload=True,
             verbose=True
         )
 
