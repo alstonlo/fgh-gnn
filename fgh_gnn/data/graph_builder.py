@@ -36,7 +36,6 @@ class FGroupHetGraphBuilder:
         c2c_edges, overlap_feats = \
             self._make_intracluster_edges(raw_graph, clusters)
 
-
         data_dict = {
             ('atom', 'bond', 'atom'): (a2a_edges[0], a2a_edges[1]),
             ('cluster', 'refine', 'atom'): (c2atom_edges[0], c2atom_edges[1]),
@@ -100,7 +99,6 @@ class FGroupHetGraphBuilder:
 
         return clusters
 
-    # noinspection PyMethodMayBeStatic
     def _make_inter_edges(self, clusters):
 
         c2atom_edges = [[], []]
@@ -119,7 +117,6 @@ class FGroupHetGraphBuilder:
 
         return c2atom_edges, atom2c_edges
 
-    # noinspection PyMethodMayBeStatic
     def _make_intracluster_edges(self, raw_graph, clusters):
 
         edge_index = raw_graph['edge_index']
