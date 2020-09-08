@@ -1,19 +1,16 @@
-import pathlib
-
 import pytorch_lightning as pl
-from ogb.graphproppred import GraphPropPredDataset
 
-from fgh_gnn.utils import analyze_fgroups_and_rings
-from fgh_gnn.utils import ogb_graph_to_mol
+from .datasets import OGBPropPredDataset
 
 
 class OGBDataModule(pl.LightningDataModule):
 
-    def __init__(self, name, root):
+    def __init__(self, name, data_dir, min_freq):
         super(OGBDataModule).__init__()
 
         self.name = name
-        self.root = root
+        self.data_dir = data_dir
+        self.min_freq = min_freq
 
         # Attributes to be made
         self.dataset = None
@@ -23,28 +20,21 @@ class OGBDataModule(pl.LightningDataModule):
         self.test_set = None
 
     def prepare_data(self):
-        self.dataset = GraphPropPredDataset(self.name, self.root)
-        self.split_idx = self.dataset.get_idx_split()
-
-        # functional group analysis
-        train_graphs = [self.dataset[i][0] for i in self.split_idx["train"]]
-        train_mols = map(ogb_graph_to_mol, train_graphs)
-
-        fg_stats = analyze_fgroups_and_rings(train_mols)
-
-        # save analysis and vocab to csv file
-        dataset_dir = pathlib.Path(self.dataset.root)
-        fg_stats.to_csv(dataset_dir / "functional_groups.csv")
+        self.dataset = OGBPropPredDataset(self.name, self.data_dir)
 
     def setup(self, stage=None):
 
-        train_idx = self.split_idx["train"]
-        val_idx = self.split_idx["valid"]
+        self.split_idx = self.dataset.get_idx_split()
+
         test_idx = self.split_idx["test"]
 
         if (stage == 'fit') or (stage is None):
-            self.train_set = self.dataset[train_idx]
-            self.val_set = self.dataset[val_idx]
+
+            ogb_train_set = [self.dataset[i] for i in self.split_idx["train"]]
+            ogb_val_set = [self.dataset[i] for i in self.split_idx["valid"]]
+
+            self.train_set = ogb_train_set
+            self.val_set = ogb_val_set
 
         if (stage == 'test') or (stage is None):
             self.test_set = self.dataset[test_idx]
