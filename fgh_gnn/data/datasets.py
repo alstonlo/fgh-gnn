@@ -192,11 +192,12 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
         vocab = fgroups_and_rings[fgroups_and_rings['freq'] >= self.min_freq]
 
         atom_data = []  # add atom data
-        for atomic_num in range(1, 119):
+        for atomic_num in range(0, 119):
             atom = Chem.Atom(atomic_num)
             atom_data.append({'name': atom.GetSymbol(), 'type': 'atom'})
 
         vocab = pd.concat([pd.DataFrame(atom_data), vocab], ignore_index=True)
-        vocab.append({'name': 'misc_ring', 'type': 'ring'}, ignore_index=True)
+        vocab = vocab.append({'name': 'misc_ring', 'type': 'ring'},
+                             ignore_index=True)
 
         return vocab

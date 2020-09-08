@@ -18,7 +18,7 @@ class FGroupHetGraphBuilder:
 
         self.ring_vocab = vocab.loc[vocab['type'] == 'ring']
         self.ring_smiles_set = set(self.ring_vocab['name'].unique())
-        self.misc_ring_idx = len(vocab)
+        self.misc_ring_idx = len(vocab) - 1
 
     def build_fgroup_heterograph(self, raw_graph):
 
