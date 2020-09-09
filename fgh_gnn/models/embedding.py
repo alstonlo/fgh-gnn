@@ -2,7 +2,7 @@ from ogb.utils.features import get_atom_feature_dims
 from torch import nn
 
 
-class OGBNodeEmbedding(nn.Module):
+class NodeEmbedding(nn.Module):
     """Adapted from [1].
 
     References:
@@ -11,7 +11,7 @@ class OGBNodeEmbedding(nn.Module):
     """
 
     def __init__(self, vocab_dim, embd_dim):
-        super(OGBNodeEmbedding, self).__init__()
+        super(NodeEmbedding, self).__init__()
 
         vocab_embd = nn.Embedding(vocab_dim, embd_dim)
 
