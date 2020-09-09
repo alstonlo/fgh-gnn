@@ -7,12 +7,12 @@ import numpy as np
 import ogb.utils.url as url_utils
 import pandas as pd
 import torch
+import tqdm
 from ogb.io.read_graph_raw import read_csv_graph_raw
 from rdkit import Chem
 
 import fgh_gnn.utils as utils
 from .graph_builder import FGroupHetGraphBuilder
-import tqdm
 
 
 class OGBPropPredDataset(dgl.data.DGLDataset):
@@ -47,6 +47,11 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
         self.task_type = self.meta_info[name]["task type"]
         self.num_classes = self.meta_info[name]["num classes"]
 
+        # to be assigned later
+        self.vocab = None
+        self.graphs = None
+        self.labels = None
+
         super(OGBPropPredDataset, self).__init__(
             name=name,
             url=self.meta_info[name]["url"],
@@ -55,11 +60,6 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
             # force_reload=True,  # TODO: remove me
             verbose=True
         )
-
-        # to be assigned later
-        self.vocab = None
-        self.graphs = None
-        self.labels = None
 
     @property
     def raw_path(self):
