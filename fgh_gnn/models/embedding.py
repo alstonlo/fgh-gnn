@@ -30,12 +30,6 @@ class NodeEmbedding(nn.Module):
         # cluster embedding
         self.cluster_embd_list = nn.ModuleList([vocab_embd, cluster_type_embd])
 
-        self.apply(self.init_weights)
-
-    def init_weights(self, m):
-        if isinstance(m, nn.Embedding):
-            nn.init.xavier_uniform_(m.weight.data)
-
     def forward(self, x, x_type):
 
         if x_type == 'atom':
