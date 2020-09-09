@@ -11,7 +11,7 @@ class NodeEmbedding(nn.Module):
     """
 
     def __init__(self, vocab_dim, embd_dim):
-        super(NodeEmbedding, self).__init__()
+        super(NodeEmbedding).__init__()
 
         vocab_embd = nn.Embedding(vocab_dim, embd_dim)
 
