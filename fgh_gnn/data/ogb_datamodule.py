@@ -9,7 +9,7 @@ from .ogb_dataset import OGBPropPredDataset
 class OGBDataModule(pl.LightningDataModule):
 
     def __init__(self, name, data_dir, min_count, batch_size, num_workers=0):
-        super(OGBDataModule).__init__()
+        super().__init__()
 
         self.name = name
         self.data_dir = data_dir

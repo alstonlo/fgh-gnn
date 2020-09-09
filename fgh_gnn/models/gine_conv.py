@@ -20,7 +20,7 @@ class GINEConv(nn.Module):
                  aggregator_type,
                  init_eps=0,
                  learn_eps=False):
-        super(GINEConv, self).__init__()
+        super().__init__()
         self.apply_func = apply_func
         self._aggregator_type = aggregator_type
         if aggregator_type == 'sum':

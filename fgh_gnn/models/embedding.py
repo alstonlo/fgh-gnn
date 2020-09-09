@@ -11,7 +11,7 @@ class NodeEmbedding(nn.Module):
     """
 
     def __init__(self, vocab_dim, embd_dim):
-        super(NodeEmbedding).__init__()
+        super().__init__()
 
         vocab_embd = nn.Embedding(vocab_dim, embd_dim)
 
@@ -23,7 +23,7 @@ class NodeEmbedding(nn.Module):
 
         # skip atom_feature[0], which embeds atomic number
         atom_feature_dims = get_atom_feature_dims()
-        for i, dim in enumerate(atom_feature_dims[1:]):
+        for dim in atom_feature_dims[1:]:
             embd = nn.Embedding(dim, embd_dim)
             self.atom_embd_list.append(embd)
 

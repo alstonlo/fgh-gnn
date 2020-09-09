@@ -52,7 +52,7 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
         self.graphs = None
         self.labels = None
 
-        super(OGBPropPredDataset, self).__init__(
+        super().__init__(
             name=name,
             url=self.meta_info[name]["url"],
             raw_dir=self.root,
