@@ -61,7 +61,6 @@ class OGBDataModule(pl.LightningDataModule):
 
 
 def _collate_fn(batch):
-    graphs, labels = batch
-    g = dgl.batch(graphs)
-    labels = torch.tensor(labels, dtype=torch.long)
-    return g, labels
+    graphs, labels = map(list, zip(*batch))
+    batched_graph = dgl.batch(graphs)
+    return batched_graph, torch.stack(labels)
