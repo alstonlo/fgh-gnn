@@ -8,12 +8,12 @@ from .ogb_dataset import OGBPropPredDataset
 
 class OGBDataModule(pl.LightningDataModule):
 
-    def __init__(self, name, data_dir, min_freq, batch_size, num_workers=0):
+    def __init__(self, name, data_dir, min_count, batch_size, num_workers=0):
         super(OGBDataModule).__init__()
 
         self.name = name
         self.data_dir = data_dir
-        self.min_freq = min_freq
+        self.min_count = min_count
         self.batch_size = batch_size
         self.num_workers = num_workers
 
@@ -27,7 +27,7 @@ class OGBDataModule(pl.LightningDataModule):
     def prepare_data(self):
         self.dataset = OGBPropPredDataset(name=self.name,
                                           root=self.data_dir,
-                                          min_freq=self.min_freq)
+                                          min_count=self.min_count)
 
     def setup(self, stage=None):
 

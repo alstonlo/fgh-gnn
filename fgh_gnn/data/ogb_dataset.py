@@ -23,9 +23,9 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
             ogb/graphproppred/dataset_dgl.py
     """
 
-    def __init__(self, name, root="dataset", min_freq=0.01):
+    def __init__(self, name, root="dataset", min_count=10):
 
-        self.min_freq = min_freq
+        self.min_count = min_count
 
         # important file paths
         root = pathlib.Path(root)
@@ -52,6 +52,7 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
             url=self.meta_info[name]["url"],
             raw_dir=self.root,
             save_dir=self.root,
+            # force_reload=True,  # TODO: remove me
             verbose=True
         )
 
@@ -188,7 +189,7 @@ class OGBPropPredDataset(dgl.data.DGLDataset):
         fgroups_and_rings.to_csv(self.save_path / 'fgroup_and_rings.csv')
 
         # extract vocab from analysis
-        vocab = fgroups_and_rings[fgroups_and_rings['freq'] >= self.min_freq]
+        vocab = fgroups_and_rings[fgroups_and_rings['count'] >= self.min_count]
 
         atom_data = []  # add atom data
         for atomic_num in range(0, 119):
