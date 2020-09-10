@@ -1,6 +1,8 @@
 import dgl
+import pathlib
 import pytorch_lightning as pl
 import torch
+from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 
 from .ogb_dataset import OGBPropPredDataset
@@ -8,14 +10,29 @@ from .ogb_dataset import OGBPropPredDataset
 
 class OGBDataModule(pl.LightningDataModule):
 
-    def __init__(self, name, data_dir, min_count, batch_size, num_workers=0):
+    @staticmethod
+    def add_datamodule_specific_args(parent_parser):
+        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+
+        data_dir = str(pathlib.Path(__file__).parents[2] / 'datasets')
+
+        parser.add_argument('--name', type=str, required=True)
+        parser.add_argument('--min_count', type=int, required=True)
+
+        parser.add_argument('--data_dir', type=str, default=data_dir)
+        parser.add_argument('--num_workers', type=int, default=0)
+        parser.add_argument('--batch_size', type=int, default=128)
+
+        return parser
+
+    def __init__(self, config):
         super().__init__()
 
-        self.name = name
-        self.data_dir = data_dir
-        self.min_count = min_count
-        self.batch_size = batch_size
-        self.num_workers = num_workers
+        self.name = config.name
+        self.min_count = config.min_count
+        self.data_dir = config.data_dir
+        self.num_workers = config.num_workers
+        self.batch_size = config.batch_size
 
         # Attributes to be assigned
         self.dataset = None
@@ -63,5 +80,5 @@ class OGBDataModule(pl.LightningDataModule):
 def _collate_fn(batch):
     graphs, labels = map(list, zip(*batch))
     batched_graph = dgl.batch(graphs)
-    batched_labels = torch.cat(labels)
+    batched_labels = torch.stack(labels)
     return batched_graph, batched_labels
