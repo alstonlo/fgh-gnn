@@ -1,9 +1,7 @@
-import dgl
 import pathlib
 import pytorch_lightning as pl
-import torch
+import torch_geometric as tg
 from argparse import ArgumentParser
-from torch.utils.data import DataLoader
 
 from .ogb_dataset import OGBPropPredDataset
 
@@ -58,27 +56,17 @@ class OGBDataModule(pl.LightningDataModule):
             self.test_set = self.dataset[self.split_idx['test']]
 
     def train_dataloader(self):
-        return DataLoader(self.train_set,
-                          batch_size=self.batch_size,
-                          shuffle=True,
-                          num_workers=self.num_workers,
-                          collate_fn=_collate_fn)
+        return tg.data.DataLoader(self.train_set,
+                                  batch_size=self.batch_size,
+                                  shuffle=True,
+                                  num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set,
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          collate_fn=_collate_fn)
+        return tg.data.DataLoader(self.val_set,
+                                  batch_size=self.batch_size,
+                                  num_workers=self.num_workers)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set,
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          collate_fn=_collate_fn)
-
-
-def _collate_fn(batch):
-    graphs, labels = map(list, zip(*batch))
-    batched_graph = dgl.batch(graphs)
-    batched_labels = torch.stack(labels)
-    return batched_graph, batched_labels
+        return tg.data.DataLoader(self.test_set,
+                                  batch_size=self.batch_size,
+                                  num_workers=self.num_workers)

@@ -1,12 +1,51 @@
 import itertools
-
-import dgl
 import torch
+import torch_geometric as tg
 from rdkit import Chem
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 
 from fgh_gnn.utils import FGROUP_MOLS, get_ring_fragments, ogb_graph_to_mol
+
+
+class Cluster:
+
+    def __init__(self, vocab_id, cluster_type, atom_idxs):
+
+        # for sanity
+        if not isinstance(vocab_id, int):
+            raise ValueError()
+
+        self.vocab_id = vocab_id
+        self.cluster_type_idx = ('fgroup', 'ring', 'atom').index(cluster_type)
+        self.atom_idxs = frozenset(atom_idxs)
+
+        self.features = [self.vocab_id, self.cluster_type_idx]
+
+
+class FGroupHetGraph(tg.data.Data):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # To be assigned later
+        self.x_cluster = None
+        self.c2c_edge_index = None
+        self.c2c_edge_attr = None
+        self.num_clusters = None
+
+        self.c2atom_edge_index = None
+        self.atom2c_edge_index = None
+
+    def __inc__(self, key, value):
+        if key == 'c2c_edge_index':
+            return self.x_cluster.size(0)
+        elif key == 'c2atom_edge_index':
+            return torch.tensor([[self.x_cluster.size(0)], [self.x.size(0)]])
+        elif key == 'atom2c_edge_index':
+            return torch.tensor([[self.x.size(0)], [self.x_cluster.size(0)]])
+        else:
+            return super().__inc__(key, value)
 
 
 class FGroupHetGraphBuilder:
@@ -20,40 +59,28 @@ class FGroupHetGraphBuilder:
         self.ring_smiles_set = set(self.ring_vocab['name'].unique())
         self.misc_ring_idx = len(vocab) - 1
 
-    def build_fgroup_heterograph(self, raw_graph):
-
-        atom_feats = torch.from_numpy(raw_graph['node_feat'])
-        bond_feats = torch.from_numpy(raw_graph['edge_feat'])
-        a2a_edges = torch.from_numpy(raw_graph['edge_index'])
+    def __call__(self, data):
 
         # build tree
-        mol = ogb_graph_to_mol(raw_graph)
+        mol = ogb_graph_to_mol(data)
         clusters = self._make_clusters(mol)
-        cluster_feats = torch.tensor([c.features for c in clusters],
-                                     dtype=torch.long)
+        cluster_attr = torch.tensor([c.features for c in clusters],
+                                    dtype=torch.long)
 
         c2atom_edges, atom2c_edges = self._make_inter_edges(clusters)
-        c2c_edges, overlap_feats = \
-            self._make_intracluster_edges(raw_graph, clusters)
+        c2c_edges, c2c_edge_attr = \
+            self._make_intracluster_edges(data, clusters)
 
-        data_dict = {
-            ('atom', 'bond', 'atom'): (a2a_edges[0], a2a_edges[1]),
-            ('cluster', 'refine', 'atom'): (c2atom_edges[0], c2atom_edges[1]),
-            ('atom', 'pool', 'cluster'): (atom2c_edges[0], atom2c_edges[1]),
-            ('cluster', 'overlap', 'cluster'): (c2c_edges[0], c2c_edges[1])
-        }
-        num_nodes_dict = {
-            'atom': raw_graph['num_nodes'],
-            'cluster': len(clusters)
-        }
+        # build heterograph
+        g = FGroupHetGraph(**{k: v for k, v in data})
 
-        g = dgl.heterograph(data_dict=data_dict, num_nodes_dict=num_nodes_dict)
+        g.x_cluster = cluster_attr
+        g.c2c_edge_index = c2c_edges
+        g.c2c_edge_attr = c2c_edge_attr
+        g.num_clusters = len(clusters)
 
-        g.nodes['atom'].data['x'] = atom_feats
-        g.nodes['cluster'].data['x'] = cluster_feats
-
-        g.edges['bond'].data['x'] = bond_feats
-        g.edges['overlap'].data['x'] = overlap_feats
+        g.c2atom_edge_index = c2atom_edges
+        g.atom2c_edge_index = atom2c_edges
 
         return g
 
@@ -117,11 +144,11 @@ class FGroupHetGraphBuilder:
 
         return c2atom_edges, atom2c_edges
 
-    def _make_intracluster_edges(self, raw_graph, clusters):
+    def _make_intracluster_edges(self, data, clusters):
 
-        edge_index = raw_graph['edge_index']
+        edge_index = data.edge_index
 
-        edge_dict = {i: set() for i in range(raw_graph['num_nodes'])}
+        edge_dict = {i: set() for i in range(data.num_nodes)}
         for i, j in zip(edge_index[0], edge_index[1]):
             edge_dict[i].add(j)
 
@@ -158,24 +185,9 @@ class FGroupHetGraphBuilder:
         # represent as sparse matrix
         adj_matrix = adj_matrix.to_sparse().coalesce()
         edge_index = adj_matrix.indices()
-        edge_feats = adj_matrix.values()
+        edge_attr = adj_matrix.values()
 
-        return edge_index, edge_feats
-
-
-class Cluster:
-
-    def __init__(self, vocab_id, cluster_type, atom_idxs):
-
-        # for sanity
-        if not isinstance(vocab_id, int):
-            raise ValueError()
-
-        self.vocab_id = vocab_id
-        self.cluster_type_idx = ('fgroup', 'ring', 'atom').index(cluster_type)
-        self.atom_idxs = frozenset(atom_idxs)
-
-        self.features = [self.vocab_id, self.cluster_type_idx]
+        return edge_index, edge_attr
 
 
 # Helper Method
