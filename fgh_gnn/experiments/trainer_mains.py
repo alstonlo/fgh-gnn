@@ -1,4 +1,3 @@
-import dgl
 import pathlib
 import pytorch_lightning as pl
 import pytorch_lightning.loggers as pl_loggers
@@ -6,11 +5,10 @@ from argparse import ArgumentParser
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from fgh_gnn.data import OGBDataModule
-from fgh_gnn.models import FGHGNN
+from fgh_gnn.models import FGHGNNLightning
 
 
 def train_on_ogb():
-
     # arguments
     parser = ArgumentParser()
 
@@ -20,13 +18,12 @@ def train_on_ogb():
     parser.add_argument('--patience', type=int, default=10)
 
     parser = OGBDataModule.add_datamodule_specific_args(parser)
-    parser = FGHGNN.add_model_specific_args(parser)
+    parser = FGHGNNLightning.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
     config = parser.parse_args()
 
     # seed everything
     pl.trainer.seed_everything(config.seed)
-    dgl.random.seed(config.seed)
 
     # make save directories
     project_dir = pathlib.Path(__file__).parents[2]
@@ -40,6 +37,10 @@ def train_on_ogb():
     datamodule = OGBDataModule(config)
     datamodule.prepare_data()
     datamodule.setup(stage='fit')
+
+    config.vocab_dim = len(datamodule.dataset.vocab)
+    config.out_dim = datamodule.dataset.num_tasks
+    config.num_classes = datamodule.dataset.num_classes
 
     # make loggers and callbacks
     if datamodule.dataset.eval_metric == 'rmse':
@@ -66,10 +67,10 @@ def train_on_ogb():
         checkpoint_callback=ckpting,
         early_stop_callback=early_stopping,
         deterministic=True,
-        gradient_clip_val=1.0,
         logger=tb_logger,
         progress_bar_refresh_rate=1
     )
-    model = FGHGNN(config, dataset=datamodule.dataset)
+
+    model = FGHGNNLightning(config)
 
     trainer.fit(model, datamodule=datamodule)

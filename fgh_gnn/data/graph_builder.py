@@ -1,11 +1,11 @@
 import itertools
 import torch
-import torch_geometric as tg
+import torch_geometric as pyg
 from rdkit import Chem
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 
-from fgh_gnn.utils import FGROUP_MOLS, get_ring_fragments, ogb_graph_to_mol
+from fgh_gnn.utils import FGROUP_MOLS, get_ring_fragments, pyg_graph_to_mol
 
 
 class Cluster:
@@ -23,7 +23,7 @@ class Cluster:
         self.features = [self.vocab_id, self.cluster_type_idx]
 
 
-class FGroupHetGraph(tg.data.Data):
+class FGroupHetGraph(pyg.data.Data):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -40,10 +40,10 @@ class FGroupHetGraph(tg.data.Data):
     def __inc__(self, key, value):
         if key == 'c2c_edge_index':
             return self.x_cluster.size(0)
-        elif key == 'c2atom_edge_index':
-            return torch.tensor([[self.x_cluster.size(0)], [self.x.size(0)]])
         elif key == 'atom2c_edge_index':
             return torch.tensor([[self.x.size(0)], [self.x_cluster.size(0)]])
+        elif key == 'c2atom_edge_index':
+            return torch.tensor([[self.x_cluster.size(0)], [self.x.size(0)]])
         else:
             return super().__inc__(key, value)
 
@@ -62,7 +62,7 @@ class FGroupHetGraphBuilder:
     def __call__(self, data):
 
         # build tree
-        mol = ogb_graph_to_mol(data)
+        mol = pyg_graph_to_mol(data)
         clusters = self._make_clusters(mol)
         cluster_attr = torch.tensor([c.features for c in clusters],
                                     dtype=torch.long)
@@ -146,7 +146,7 @@ class FGroupHetGraphBuilder:
 
     def _make_intracluster_edges(self, data, clusters):
 
-        edge_index = data.edge_index
+        edge_index = data.edge_index.tolist()
 
         edge_dict = {i: set() for i in range(data.num_nodes)}
         for i, j in zip(edge_index[0], edge_index[1]):

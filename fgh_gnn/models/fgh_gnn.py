@@ -1,164 +1,184 @@
-import dgl
-import pytorch_lightning as pl
-import torch
 import torch.nn.functional as F
-from argparse import ArgumentParser
-from ogb.graphproppred import Evaluator
-from pytorch_lightning.core.decorators import auto_move_data
+import torch_geometric as pyg
 from torch import nn
 
-from .conv_layers import FGHGNNConvLayer
 from .embedding import BondEmbedding, NodeEmbedding
 
 
-class FGHGNN(pl.LightningModule):
+class FGHGNN(nn.Module):
 
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-
-        parser.add_argument('--hidden_dim', type=int, required=True)
-        parser.add_argument('--num_conv_layers', type=int, required=True)
-        parser.add_argument('--gat_num_heads', type=int, required=True)
-        parser.add_argument('--dropout', type=int, required=True)
-
-        parser.add_argument('--lr', type=float, required=True)
-
-        return parser
-
-    def __init__(self, config, dataset):
+    def __init__(self, config):
         super().__init__()
 
-        self.hparams = config
-        self.lr = self.hparams.lr
+        num_layers = config.num_layers
+        vocab_dim = config.vocab_dim
+        hidden_channels = config.hidden_channels
+        proj_dim = 2 * hidden_channels
+        out_dim = config.out_dim
+        dropout = config.dropout
+        graph_pooling = config.graph_pooling
+        residual = config.residual
 
-        # variables
-        config.vocab_dim = len(dataset.vocab)
-        config.out_dim = dataset.num_tasks
+        self.num_layers = num_layers
+        self.residual = residual
 
-        if dataset.num_classes == 2:  # binary classification
-            self.loss_f = nn.BCEWithLogitsLoss()
-        else:  # regression
-            self.loss_f = nn.MSELoss()
-        self.evaluator = Evaluator(dataset.name)
+        self.node_embedding = NodeEmbedding(vocab_dim, hidden_channels)
+        self.bond_embedding = BondEmbedding(hidden_channels)
+        self.c2cbond_embedding = nn.Embedding(10, hidden_channels)
 
-        # create nn.Modules
-        self.node_embedding = NodeEmbedding(config.vocab_dim,
-                                            config.hidden_dim)
-        self.bond_embedding = BondEmbedding(config.hidden_dim)
-        self.overlap_embedding = nn.Embedding(10, config.hidden_dim)
+        self.dropout = nn.Dropout(p=dropout)
 
-        self.dropout = nn.Dropout(p=config.dropout)
+        # atom --> cluster
+        apply_func = MLP(hidden_channels, proj_dim)
+        atom2c_conv = pyg.nn.GINConv(nn=apply_func, train_eps=True)
+
+        # atom <-- cluster
+        apply_func = MLP(hidden_channels, proj_dim)
+        c2atom_conv = pyg.nn.GINConv(nn=apply_func, train_eps=True)
 
         self.conv_layers = nn.ModuleList()
-        for _ in range(config.num_conv_layers):
-            conv = FGHGNNConvLayer(hidden_dim=config.hidden_dim,
-                                   gat_num_heads=config.gat_num_heads)
+        for _ in range(num_layers):
+            conv = FGHGNNConv(hidden_channels=hidden_channels,
+                              proj_dim=proj_dim,
+                              atom2c_conv=atom2c_conv,
+                              c2atom_conv=c2atom_conv)
             self.conv_layers.append(conv)
 
         self.atom_batch_norms = nn.ModuleList([
-            nn.BatchNorm1d(config.hidden_dim)
-            for _ in range(config.num_conv_layers)
+            nn.BatchNorm1d(hidden_channels) for _ in range(num_layers)
         ])
         self.cluster_batch_norms = nn.ModuleList([
-            nn.BatchNorm1d(config.hidden_dim)
-            for _ in range(config.num_conv_layers)
+            nn.BatchNorm1d(hidden_channels) for _ in range(num_layers)
         ])
 
+        if graph_pooling == 'mean':
+            self.glob_pool_atom = pyg.nn.global_mean_pool
+            self.glob_pool_cluster = pyg.nn.global_mean_pool
+
+        elif graph_pooling == 'global_attention':
+            gate_nn = nn.Sequential(
+                MLP(hidden_channels, proj_dim),
+                nn.Linear(proj_dim, 1)
+            )
+            self.glob_pool_atom = pyg.nn.GlobalAttention(gate_nn)
+
+            gate_nn = nn.Sequential(
+                MLP(hidden_channels, proj_dim),
+                nn.Linear(proj_dim, 1)
+            )
+            self.glob_pool_cluster = pyg.nn.GlobalAttention(gate_nn)
+
+        else:
+            raise ValueError("Invalid graph_pooling argument.")
+
         self.classify = nn.Sequential(
-            nn.Linear(config.hidden_dim, config.hidden_dim),
-            nn.BatchNorm1d(config.hidden_dim),
+            nn.Linear(hidden_channels, 2 * hidden_channels),
             nn.ReLU(),
-            nn.Linear(config.hidden_dim, config.out_dim)
+            nn.Linear(2 * hidden_channels, out_dim),
         )
 
-    def reset_parameters(self):
-        self.node_embedding.reset_parameters()
-        self.bond_embedding.reset_parameters()
-        self.overlap_embedding.reset_parameters()
+    def forward(self, data):
+        x = self.node_embedding(data.x, x_type='atom')
+        x_cl = self.node_embedding(data.x_cluster, x_type='cluster')
+        edge_attr = self.bond_embedding(data.edge_attr)
+        c2c_edge_attr = self.c2cbond_embedding(data.c2c_edge_attr)
 
-        for conv in self.conv_layers:
-            conv.reset_parameters()
+        for layer in range(self.num_layers):
+            h, h_cl = self.conv_layers[layer](
+                x=x,
+                edge_index=data.edge_index,
+                edge_attr=edge_attr,
+                x_cl=x_cl,
+                c2c_edge_index=data.c2c_edge_index,
+                c2c_edge_attr=c2c_edge_attr,
+                atom2c_edge_index=data.atom2c_edge_index,
+                c2atom_edge_index=data.c2atom_edge_index
+            )
 
-        for batch_norm in self.atom_batch_norms:
-            batch_norm.reset_parameters()
-        for batch_norm in self.cluster_batch_norms:
-            batch_norm.reset_parameters()
+            h = self.atom_batch_norms[layer](h)
+            h_cl = self.cluster_batch_norms[layer](h_cl)
 
-        for module in self.classify:
-            if isinstance(module, (nn.Linear, nn.BatchNorm1d)):
-                module.reset_parameters()
+            if layer == self.num_layers - 1:
+                h = self.dropout(h)
+                h_cl = self.dropout(h_cl)
+            else:
+                h = self.dropout(F.relu(h))
+                h_cl = self.dropout(F.relu(h_cl))
 
-    @auto_move_data
-    def forward(self, g):
-        atom_feats = g.nodes['atom'].data['x']
-        cluster_feats = g.nodes['cluster'].data['x']
-        bond_feats = g.edges['bond'].data['x']
-        overlap_feats = g.edges['overlap'].data['x']
+            if self.residual:
+                h = x + h
+                h_cl = x_cl + h_cl
 
-        # embed features above
-        atom_feats = self.node_embedding(atom_feats, x_type='atom')
-        cluster_feats = self.node_embedding(cluster_feats, x_type='cluster')
-        bond_feats = self.bond_embedding(bond_feats)
-        overlap_feats = self.overlap_embedding(overlap_feats)
+            x, x_cl = h, h_cl
 
-        h_0 = {'atom': atom_feats, 'cluster': cluster_feats}
+        atom_pool = self.glob_pool_atom(x, data.x_batch)
+        cluster_pool = self.glob_pool_cluster(x_cl, data.x_cluster_batch)
 
-        h_i = h_0
-        for conv, atom_bn, cluster_bn in zip(self.conv_layers,
-                                             self.atom_batch_norms,
-                                             self.cluster_batch_norms):
+        return self.classify(atom_pool + cluster_pool)
 
-            mod_args = {'bond': [bond_feats], 'overlap': [overlap_feats]}
-            h_i = conv(g, (h_i, h_i), mod_args=mod_args)
 
-            h_i['atom'] = self.dropout(F.relu(atom_bn(h_i['atom'])))
-            h_i['cluster'] = self.dropout(F.relu(cluster_bn(h_i['cluster'])))
+class FGHGNNConv(nn.Module):
 
-        with g.local_scope():
-            g.ndata['h'] = h_i
+    def __init__(self, hidden_channels, proj_dim,
+                 atom2c_conv, c2atom_conv):
+        super().__init__()
 
-            hg = 0
-            for ntype in g.ntypes:
-                hg = hg + dgl.mean_nodes(g, 'h', ntype=ntype)
-            out = self.classify(hg)
+        # atom <--> atom
+        apply_func = MLP(hidden_channels, proj_dim)
+        self.atom_gineconv = pyg.nn.GINEConv(nn=apply_func, train_eps=True)
 
-            return out
+        # cluster <--> cluster
+        apply_func = MLP(hidden_channels, proj_dim)
+        self.cluster_gineconv = pyg.nn.GINEConv(nn=apply_func, train_eps=True)
 
-    def training_step(self, batch, batch_idx):
-        g, label = batch
-        mask = ~torch.isnan(label)
+        # atom <--> cluster
+        self.atom2c_conv = atom2c_conv
+        self.c2atom_conv = c2atom_conv
 
-        y = label[mask]
-        y_hat = self(g)[mask]
-        loss = self.loss_f(y_hat, y)
+        # (atom <--> atom) + (atom <-- cluster)
+        self.merge_atom_lin = nn.Linear(proj_dim, hidden_channels)
 
-        result = pl.TrainResult(minimize=loss)
-        return result
+        # (cluster <--> cluster) + (atom --> cluster)
+        self.merge_cluster_lin = nn.Linear(proj_dim, hidden_channels)
 
-    def validation_step(self, batch, batch_idx):
-        g, label = batch
+    def forward(self, x, edge_index, edge_attr,
+                x_cl, c2c_edge_index, c2c_edge_attr,
+                atom2c_edge_index, c2atom_edge_index):
 
-        result = pl.EvalResult()
-        result.y = label
-        result.y_hat = self(g)
-        return result
+        # atom <--> atom
+        h = self.atom_gineconv(x, edge_index, edge_attr)
 
-    def validation_epoch_end(self, outputs):
-        mask = ~torch.isnan(outputs.y)
-        mean_val_loss = self.loss_f(outputs.y_hat[mask], outputs.y[mask])
+        # cluster <--> cluster
+        h_cl = self.cluster_gineconv(x_cl, c2c_edge_index, c2c_edge_attr)
 
-        eval_metric = self.evaluator.eval({
-            'y_pred': outputs.y_hat,
-            'y_true': outputs.y
-        })[self.evaluator.eval_metric]
-        eval_metric = torch.tensor(eval_metric)
+        # atom --> cluster
+        h_atom2c = self.atom2c_conv((x, x_cl), atom2c_edge_index,
+                                    size=(x.size(0), x_cl.size(0)))
 
-        result = pl.EvalResult(checkpoint_on=eval_metric,
-                               early_stop_on=eval_metric)
-        result.log('metric', eval_metric)
-        result.log('val_loss', mean_val_loss)
-        return result
+        # atom <-- cluster
+        h_c2atom = self.c2atom_conv((x_cl, x), c2atom_edge_index,
+                                    size=(x_cl.size(0), x.size(0)))
 
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        h = self.merge_atom_lin(h + h_c2atom)
+        h_cl = self.merge_cluster_lin(h_cl + h_atom2c)
+
+        return h, h_cl
+
+
+class MLP(nn.Module):
+
+    def __init__(self, *dims):
+        super().__init__()
+
+        module_list = []
+        for dim_prev, dim_curr in zip(dims, dims[1:]):
+            module_list.extend([
+                nn.Linear(dim_prev, dim_curr),
+                nn.BatchNorm1d(dim_curr),
+                nn.ReLU()
+            ])
+
+        self.mlp = nn.Sequential(*module_list)
+
+    def forward(self, x):
+        return self.mlp(x)

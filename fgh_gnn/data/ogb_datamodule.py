@@ -12,14 +12,14 @@ class OGBDataModule(pl.LightningDataModule):
     def add_datamodule_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
 
-        data_dir = str(pathlib.Path(__file__).parents[2] / 'datasets')
+        data_dir = pathlib.Path(__file__).parents[2] / 'datasets'
 
-        parser.add_argument('--name', type=str, required=True)
-        parser.add_argument('--min_count', type=int, required=True)
+        parser.add_argument('--name', type=str, default='ogbg-molesol')
+        parser.add_argument('--min_count', type=int, default=10)
 
         parser.add_argument('--data_dir', type=str, default=data_dir)
         parser.add_argument('--num_workers', type=int, default=0)
-        parser.add_argument('--batch_size', type=int, default=128)
+        parser.add_argument('--batch_size', type=int, default=64)
 
         return parser
 
@@ -59,14 +59,17 @@ class OGBDataModule(pl.LightningDataModule):
         return tg.data.DataLoader(self.train_set,
                                   batch_size=self.batch_size,
                                   shuffle=True,
-                                  num_workers=self.num_workers)
+                                  num_workers=self.num_workers,
+                                  follow_batch=['x', 'x_cluster'])
 
     def val_dataloader(self):
         return tg.data.DataLoader(self.val_set,
                                   batch_size=self.batch_size,
-                                  num_workers=self.num_workers)
+                                  num_workers=self.num_workers,
+                                  follow_batch=['x', 'x_cluster'])
 
     def test_dataloader(self):
         return tg.data.DataLoader(self.test_set,
                                   batch_size=self.batch_size,
-                                  num_workers=self.num_workers)
+                                  num_workers=self.num_workers,
+                                  follow_batch=['x', 'x_cluster'])
