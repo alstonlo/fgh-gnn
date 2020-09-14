@@ -15,7 +15,7 @@ class OGBDataModule(pl.LightningDataModule):
         data_dir = pathlib.Path(__file__).parents[2] / 'datasets'
 
         parser.add_argument('--name', type=str, default='ogbg-molesol')
-        parser.add_argument('--min_count', type=int, default=10)
+        parser.add_argument('--min_count', type=int, default=20)
 
         parser.add_argument('--data_dir', type=str, default=data_dir)
         parser.add_argument('--num_workers', type=int, default=0)
