@@ -15,8 +15,8 @@ class FGHGNNLightning(pl.LightningModule):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
 
         parser.add_argument('--hidden_channels', type=int, default=100)
-        parser.add_argument('--num_layers', type=int, default=5)
-        parser.add_argument('--dropout', type=float, default=0.2)
+        parser.add_argument('--num_layers', type=int, default=3)
+        parser.add_argument('--dropout', type=float, default=0.5)
         parser.add_argument('--graph_pooling', type=str, default='mean')
         parser.add_argument('--residual', type=bool, default=False)
 
