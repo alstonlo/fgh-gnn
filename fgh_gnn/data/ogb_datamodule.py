@@ -2,8 +2,9 @@ import pathlib
 import pytorch_lightning as pl
 import torch_geometric as tg
 from argparse import ArgumentParser
+from ogb.graphproppred import PygGraphPropPredDataset
 
-from .ogb_dataset import OGBPropPredDataset
+from .graph_builder import build_fgroup_heterograph
 
 
 class OGBDataModule(pl.LightningDataModule):
@@ -15,11 +16,9 @@ class OGBDataModule(pl.LightningDataModule):
         data_dir = pathlib.Path(__file__).parents[2] / 'datasets'
 
         parser.add_argument('--name', type=str, default='ogbg-molesol')
-        parser.add_argument('--min_count', type=int, default=20)
-
         parser.add_argument('--data_dir', type=str, default=data_dir)
         parser.add_argument('--num_workers', type=int, default=0)
-        parser.add_argument('--batch_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=128)
 
         return parser
 
@@ -27,7 +26,6 @@ class OGBDataModule(pl.LightningDataModule):
         super().__init__()
 
         self.name = config.name
-        self.min_count = config.min_count
         self.data_dir = config.data_dir
         self.num_workers = config.num_workers
         self.batch_size = config.batch_size
@@ -40,9 +38,10 @@ class OGBDataModule(pl.LightningDataModule):
         self.test_set = None
 
     def prepare_data(self):
-        self.dataset = OGBPropPredDataset(name=self.name,
-                                          root=self.data_dir,
-                                          min_count=self.min_count)
+        pre_transform = build_fgroup_heterograph
+        self.dataset = PygGraphPropPredDataset(name=self.name,
+                                               root=self.data_dir,
+                                               pre_transform=pre_transform)
 
     def setup(self, stage=None):
 

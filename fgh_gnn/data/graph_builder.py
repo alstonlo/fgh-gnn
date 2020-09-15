@@ -1,26 +1,10 @@
 import itertools
 import torch
 import torch_geometric as pyg
-from rdkit import Chem
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 
 from fgh_gnn.utils import FGROUP_MOLS, get_ring_fragments, pyg_graph_to_mol
-
-
-class Cluster:
-
-    def __init__(self, vocab_id, cluster_type, atom_idxs):
-
-        # for sanity
-        if not isinstance(vocab_id, int):
-            raise ValueError()
-
-        self.vocab_id = vocab_id
-        self.cluster_type_idx = ('fgroup', 'ring', 'atom').index(cluster_type)
-        self.atom_idxs = frozenset(atom_idxs)
-
-        self.features = [self.vocab_id, self.cluster_type_idx]
 
 
 class FGroupHetGraph(pyg.data.Data):
@@ -48,146 +32,146 @@ class FGroupHetGraph(pyg.data.Data):
             return super().__inc__(key, value)
 
 
-class FGroupHetGraphBuilder:
+class Cluster:
 
-    def __init__(self, vocab):
-        self.vocab = vocab
+    cluster_types = ('fgroup', 'ring', 'atom')
+    max_cluster_size = 60
 
-        self.fgroup_vocab = vocab.loc[vocab['type'] == 'fgroup']
+    def __init__(self, cluster_type, members):
+        self.cluster_type_idx = self.cluster_types.index(cluster_type)
+        self.members = frozenset(members)
 
-        self.ring_vocab = vocab.loc[vocab['type'] == 'ring']
-        self.ring_smiles_set = set(self.ring_vocab['name'].unique())
-        self.misc_ring_idx = len(vocab) - 1
+        if len(members) > self.max_cluster_size:
+            raise ValueError(f"cluster too large (size {len(members)}).")
 
-    def __call__(self, data):
+        self.features = [self.cluster_type_idx, len(members)]
 
-        # build tree
-        mol = pyg_graph_to_mol(data)
-        clusters = self._make_clusters(mol)
-        cluster_attr = torch.tensor([c.features for c in clusters],
-                                    dtype=torch.long)
 
-        c2atom_edges, atom2c_edges = self._make_inter_edges(clusters)
-        c2c_edges, c2c_edge_attr = \
-            self._make_intracluster_edges(data, clusters)
+def build_fgroup_heterograph(data):
+    # build tree
+    mol = pyg_graph_to_mol(data)
+    clusters = make_clusters(mol)
+    cluster_attr = torch.tensor([c.features for c in clusters],
+                                dtype=torch.long)
 
-        # build heterograph
-        g = FGroupHetGraph(**{k: v for k, v in data})
+    c2atom_edges, atom2c_edges = make_inter_edges(clusters)
+    c2c_edges, c2c_edge_attr = make_intracluster_edges(data, clusters)
 
-        g.x_cluster = cluster_attr
-        g.c2c_edge_index = c2c_edges
-        g.c2c_edge_attr = c2c_edge_attr
-        g.num_clusters = len(clusters)
+    # build heterograph
+    g = FGroupHetGraph(**{k: v for k, v in data})
 
-        g.c2atom_edge_index = c2atom_edges
-        g.atom2c_edge_index = atom2c_edges
+    g.x_cluster = cluster_attr
+    g.c2c_edge_index = c2c_edges
+    g.c2c_edge_attr = c2c_edge_attr
+    g.num_clusters = len(clusters)
 
-        return g
+    g.c2atom_edge_index = c2atom_edges
+    g.atom2c_edge_index = atom2c_edges
 
-    def _make_clusters(self, mol):
+    return g
 
-        clusters = []
 
-        # add all functional groups
-        for row in self.fgroup_vocab.itertuples():
+def make_clusters(mol):
+    clusters = []
 
-            row_idx = row.Index
+    # add all functional groups
+    for fgroup_query in FGROUP_MOLS.values():
+        matches = mol.GetSubstructMatches(fgroup_query)
+        for match_idxs in matches:
+            clusters.append(Cluster('fgroup', match_idxs))
 
-            fgroup_query = FGROUP_MOLS[row.name]
-            matches = mol.GetSubstructMatches(fgroup_query)
+    # add all rings
+    for ring_idxs in get_ring_fragments(mol):
+        clusters.append(Cluster('ring', ring_idxs))
 
-            for match_idxs in matches:
-                clusters.append(Cluster(row_idx, 'fgroup', match_idxs))
+    # add all atoms as clusters of size 1
+    for atom_idx in range(mol.GetNumAtoms()):
+        clusters.append(Cluster('atom', (atom_idx,)))
 
-        # add all rings
-        for ring_idxs in get_ring_fragments(mol):
+    # remove all clusters such that:
+    #   * no cluster is a subset of another
+    #   * no cluster shares 3+ atoms with another cluster
+    clusters.sort(key=lambda x: len(x.members), reverse=True)
 
-            ring_smiles = Chem.MolFragmentToSmiles(mol, list(ring_idxs),
-                                                   isomericSmiles=False,
-                                                   kekuleSmiles=True)
+    cleaned_clusters = []
+    for c in clusters:
 
-            if ring_smiles in self.ring_smiles_set:
-                row_idx = self.ring_vocab.index[self.ring_vocab['name']
-                                                == ring_smiles]
-                row_idx = int(row_idx[0])
-            else:
-                row_idx = self.misc_ring_idx
+        add_c = True
+        for o in cleaned_clusters:
+            if (c.members <= o.members) or (len(c.members & o.members) >= 3):
+                add_c = False
+                break
 
-            clusters.append(Cluster(row_idx, 'ring', ring_idxs))
+        if add_c:
+            cleaned_clusters.append(c)
 
-        # add all remaining singular atoms
-        leftover_atoms = set(range(mol.GetNumAtoms()))
-        for cluster in clusters:
-            leftover_atoms.difference_update(cluster.atom_idxs)
+    return cleaned_clusters
 
-        for atom_idx in leftover_atoms:
-            atomic_num = mol.GetAtomWithIdx(atom_idx).GetAtomicNum()
-            clusters.append(Cluster(atomic_num, 'atom', (atom_idx,)))
 
-        return clusters
+def make_inter_edges(clusters):
+    c2atom_edges = [[], []]
+    atom2c_edges = [[], []]
 
-    def _make_inter_edges(self, clusters):
+    for cluster_idx, cluster in enumerate(clusters):
+        for atom_idx in cluster.members:
+            c2atom_edges[0].append(cluster_idx)
+            c2atom_edges[1].append(atom_idx)
 
-        c2atom_edges = [[], []]
-        atom2c_edges = [[], []]
+            atom2c_edges[0].append(atom_idx)
+            atom2c_edges[1].append(cluster_idx)
 
-        for cluster_idx, cluster in enumerate(clusters):
-            for atom_idx in cluster.atom_idxs:
-                c2atom_edges[0].append(cluster_idx)
-                c2atom_edges[1].append(atom_idx)
+    c2atom_edges = torch.tensor(c2atom_edges, dtype=torch.long)
+    atom2c_edges = torch.tensor(atom2c_edges, dtype=torch.long)
 
-                atom2c_edges[0].append(atom_idx)
-                atom2c_edges[1].append(cluster_idx)
+    return c2atom_edges, atom2c_edges
 
-        c2atom_edges = torch.tensor(c2atom_edges, dtype=torch.long)
-        atom2c_edges = torch.tensor(atom2c_edges, dtype=torch.long)
 
-        return c2atom_edges, atom2c_edges
+def make_intracluster_edges(data, clusters):
+    edge_index = data.edge_index.tolist()
 
-    def _make_intracluster_edges(self, data, clusters):
+    edge_dict = {i: set() for i in range(data.num_nodes)}
+    for i, j in zip(edge_index[0], edge_index[1]):
+        edge_dict[i].add(j)
 
-        edge_index = data.edge_index.tolist()
+    num_clusters = len(clusters)
+    adj_matrix = [[0] * num_clusters for _ in range(num_clusters)]
 
-        edge_dict = {i: set() for i in range(data.num_nodes)}
-        for i, j in zip(edge_index[0], edge_index[1]):
-            edge_dict[i].add(j)
+    cluster_neighbours = []
+    for cluster in clusters:
+        neighbours = set()
+        for atom_idx in cluster.members:
+            neighbours.add(atom_idx)
+            neighbours.update(edge_dict[atom_idx])
+        cluster_neighbours.append(neighbours)
 
-        num_clusters = len(clusters)
-        adj_matrix = [[0] * num_clusters for _ in range(num_clusters)]
+    for i, j in itertools.combinations(range(num_clusters), r=2):
+        ci, cj = clusters[i], clusters[j]
 
-        cluster_neighbours = []
-        for cluster in clusters:
-            neighbours = set()
-            for atom_idx in cluster.atom_idxs:
-                neighbours.add(atom_idx)
-                neighbours.update(edge_dict[atom_idx])
-            cluster_neighbours.append(neighbours)
+        if ci.members & cj.members:
+            edge_weight = len(ci.members & cj.members) + 1
+        elif cluster_neighbours[i] & cluster_neighbours[j]:
+            edge_weight = 1
+        else:
+            continue
 
-        for i, j in itertools.combinations(range(num_clusters), r=2):
-            ci, cj = clusters[i], clusters[j]
+        adj_matrix[i][j] = edge_weight
+        adj_matrix[j][i] = edge_weight
 
-            if ci.atom_idxs & cj.atom_idxs:
-                edge_weight = len(ci.atom_idxs & cj.atom_idxs) + 1
-            elif cluster_neighbours[i] & cluster_neighbours[j]:
-                edge_weight = 1
-            else:
-                continue
+    # build spanning tree
+    adj_matrix = csr_matrix(adj_matrix)
+    span_tree = minimum_spanning_tree(adj_matrix, overwrite=True)
+    adj_matrix = torch.from_numpy(span_tree.toarray()).long()
+    adj_matrix = to_bidirectional(adj_matrix)
 
-            adj_matrix[i][j] = edge_weight
-            adj_matrix[j][i] = edge_weight
+    # represent as sparse matrix
+    adj_matrix = adj_matrix.to_sparse().coalesce()
+    edge_index = adj_matrix.indices()
+    edge_attr = adj_matrix.values()
 
-        # build spanning tree
-        adj_matrix = csr_matrix(adj_matrix)
-        span_tree = minimum_spanning_tree(adj_matrix, overwrite=True)
-        adj_matrix = torch.from_numpy(span_tree.toarray()).long()
-        adj_matrix = to_bidirectional(adj_matrix)
+    # since we added 1 previously to the edge weights
+    edge_attr = edge_attr.unsqueeze(1) - 1
 
-        # represent as sparse matrix
-        adj_matrix = adj_matrix.to_sparse().coalesce()
-        edge_index = adj_matrix.indices()
-        edge_attr = adj_matrix.values()
-
-        return edge_index, edge_attr
+    return edge_index, edge_attr
 
 
 # Helper Method

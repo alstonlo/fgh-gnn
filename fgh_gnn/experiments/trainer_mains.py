@@ -38,7 +38,6 @@ def train_on_ogb():
     datamodule.prepare_data()
     datamodule.setup(stage='fit')
 
-    config.vocab_dim = len(datamodule.dataset.vocab)
     config.out_dim = datamodule.dataset.num_tasks
     config.num_classes = datamodule.dataset.num_classes
 

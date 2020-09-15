@@ -14,13 +14,16 @@ class FGHGNNLightning(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
 
-        parser.add_argument('--hidden_channels', type=int, default=100)
-        parser.add_argument('--num_layers', type=int, default=3)
-        parser.add_argument('--dropout', type=float, default=0.5)
-        parser.add_argument('--graph_pooling', type=str, default='mean')
-        parser.add_argument('--residual', type=bool, default=False)
+        parser.add_argument('--hidden_channels', type=int, default=150)
+        parser.add_argument('--proj_dim', type=int, default=150)
+        parser.add_argument('--num_heads', type=int, default=3)
+        parser.add_argument('--num_convs', type=int, default=2)
+        parser.add_argument('--num_layers', type=int, default=2)
+        parser.add_argument('--pdrop', type=float, default=0.1)
+        parser.add_argument('--global_pool', type=str, default='mean')
+        parser.add_argument('--residual', type=bool, default=True)
 
-        parser.add_argument('--lr', type=float, default=0.0001)
+        parser.add_argument('--lr', type=float, default=0.00039)
 
         return parser
 
@@ -50,7 +53,7 @@ class FGHGNNLightning(pl.LightningModule):
         loss = self.loss_f(y_hat[mask], y[mask])
 
         result = pl.TrainResult(minimize=loss)
-        result.log('train_loss', loss, logger=True)
+        result.log('train_loss', loss)
         return result
 
     def validation_step(self, batch, batch_idx):
